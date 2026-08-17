@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 
+const authRouter = require('./routes/auth');
 const pilotosRouter = require('./routes/pilotos');
 const sesionesRouter = require('./routes/sesiones');
 const vueltasRouter = require('./routes/vueltas');
@@ -21,6 +22,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
+app.use('/api/auth', authRouter);
 app.use('/api/pilotos', pilotosRouter);
 app.use('/api/sesiones', sesionesRouter);
 app.use('/api/vueltas', vueltasRouter);

@@ -1,30 +1,44 @@
 const express = require('express');
 const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 const pool = require('../db/pool');
 const { autenticarPiloto } = require('../middleware/auth');
 
 const router = express.Router();
 
+const SALT_ROUNDS = 10;
+
 /**
  * POST /api/pilotos
  * Registro de un nuevo piloto. Genera y devuelve el api_key (única vez que se muestra completo).
- * Body: { nombre_piloto, numero_piloto, steam_id?, email? }
+ * Body: { nombre_piloto, numero_piloto, steam_id?, email, password }
+ *
+ * email y password son requeridos para poder loguearse después desde la
+ * Companion App (POST /api/auth/login). La api_key sigue existiendo y es
+ * la que usa la app in-game / la Companion una vez logueada.
  */
 router.post('/', async (req, res) => {
-  const { nombre_piloto, numero_piloto, steam_id, email } = req.body;
+  const { nombre_piloto, numero_piloto, steam_id, email, password } = req.body;
 
   if (!nombre_piloto || !numero_piloto) {
     return res.status(400).json({ error: 'nombre_piloto y numero_piloto son requeridos' });
   }
+  if (!email || !password) {
+    return res.status(400).json({ error: 'email y password son requeridos' });
+  }
+  if (password.length < 8) {
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+  }
 
   const apiKey = crypto.randomBytes(32).toString('hex');
+  const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
 
   try {
     const result = await pool.query(
-      `insert into piloto (nombre_piloto, numero_piloto, steam_id, email, api_key)
-       values ($1, $2, $3, $4, $5)
+      `insert into piloto (nombre_piloto, numero_piloto, steam_id, email, api_key, password_hash)
+       values ($1, $2, $3, $4, $5, $6)
        returning id, nombre_piloto, numero_piloto, steam_id, email, fecha_registro`,
-      [nombre_piloto, numero_piloto, steam_id || null, email || null, apiKey]
+      [nombre_piloto, numero_piloto, steam_id || null, email, apiKey, passwordHash]
     );
 
     res.status(201).json({
