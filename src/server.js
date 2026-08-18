@@ -8,6 +8,7 @@ const sesionesRouter = require('./routes/sesiones');
 const vueltasRouter = require('./routes/vueltas');
 const setupsRouter = require('./routes/setups');
 const circuitosRouter = require('./routes/circuitos');
+const autosRouter = require('./routes/autos');
 const raceControlRouter = require('./routes/raceControl');
 
 const app = express();
@@ -29,6 +30,7 @@ app.use('/api/sesiones', sesionesRouter);
 app.use('/api/vueltas', vueltasRouter);
 app.use('/api/setups', setupsRouter);
 app.use('/api/circuitos', circuitosRouter);
+app.use('/api/autos', autosRouter);
 app.use('/api/race-control', raceControlRouter);
 
 // 404 genérico

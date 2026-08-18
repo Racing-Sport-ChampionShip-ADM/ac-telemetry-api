@@ -64,7 +64,7 @@ router.get('/me', autenticarPiloto, async (req, res) => {
     const piloto = req.piloto;
 
     const autos = await pool.query(
-      `select a.id as auto_id, a.nombre_interno, a.nombre_visible, a.marca, a.categoria,
+      `select a.id as auto_id, a.nombre_interno, a.nombre_visible, a.marca, a.categoria, a.imagen_url as auto_imagen,
               pa.km_totales, pa.vueltas_totales, pa.ultima_vez_usado
        from piloto_auto pa
        join auto a on a.id = pa.auto_id
@@ -74,7 +74,7 @@ router.get('/me', autenticarPiloto, async (req, res) => {
     );
 
     const records = await pool.query(
-      `select rv.auto_id, a.nombre_visible as auto_nombre,
+      `select rv.auto_id, a.nombre_visible as auto_nombre, a.imagen_url as auto_imagen,
               rv.circuito_id, c.nombre_visible as circuito_nombre, c.layout, c.imagen_url as circuito_imagen,
               rv.tiempo_ms, rv.fecha
        from record_vuelta rv
@@ -114,7 +114,7 @@ router.get('/:id/perfil', async (req, res) => {
     }
 
     const autos = await pool.query(
-      `select a.id as auto_id, a.nombre_visible, a.marca, a.categoria,
+      `select a.id as auto_id, a.nombre_visible, a.marca, a.categoria, a.imagen_url as auto_imagen,
               pa.km_totales, pa.vueltas_totales
        from piloto_auto pa
        join auto a on a.id = pa.auto_id
@@ -123,7 +123,7 @@ router.get('/:id/perfil', async (req, res) => {
     );
 
     const records = await pool.query(
-      `select rv.auto_id, a.nombre_visible as auto_nombre,
+      `select rv.auto_id, a.nombre_visible as auto_nombre, a.imagen_url as auto_imagen,
               rv.circuito_id, c.nombre_visible as circuito_nombre, c.imagen_url as circuito_imagen,
               rv.tiempo_ms, rv.fecha
        from record_vuelta rv
