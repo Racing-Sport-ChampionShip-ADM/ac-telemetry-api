@@ -29,10 +29,22 @@ async function obtenerOCrearCircuito({ nombre_interno, layout, nombre_visible, l
   const layoutNormalizado = layout || 'default';
 
   const existente = await pool.query(
-    'select id from circuito where nombre_interno = $1 and layout = $2',
+    'select id, longitud_metros from circuito where nombre_interno = $1 and layout = $2',
     [nombre_interno, layoutNormalizado]
   );
-  if (existente.rows.length > 0) return existente.rows[0].id;
+  if (existente.rows.length > 0) {
+    const circuitoId = existente.rows[0].id;
+    // Autocorrige circuitos viejos que se crearon sin longitud_metros
+    // (ej. antes de que la app in-game empezara a mandarlo). No pisa un
+    // valor ya cargado por otro dato posiblemente distinto.
+    if (existente.rows[0].longitud_metros == null && longitud_metros) {
+      await pool.query('update circuito set longitud_metros = $1 where id = $2', [
+        longitud_metros,
+        circuitoId,
+      ]);
+    }
+    return circuitoId;
+  }
 
   const creado = await pool.query(
     `insert into circuito (nombre_interno, layout, nombre_visible, longitud_metros)

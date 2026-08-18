@@ -97,6 +97,125 @@ router.get('/me', autenticarPiloto, async (req, res) => {
 });
 
 /**
+ * GET /api/pilotos/me/circuitos
+ * Devuelve, para el piloto autenticado, un resumen por cada circuito
+ * donde haya dado al menos una vuelta: imagen, vueltas totales,
+ * cantidad de sesiones, y el record histórico (auto, tiempo, fecha).
+ * Pensado para la vista "Records" (una card por pista).
+ */
+router.get('/me/circuitos', autenticarPiloto, async (req, res) => {
+  try {
+    const circuitos = await pool.query(
+      `select
+         c.id as circuito_id,
+         c.nombre_visible as circuito_nombre,
+         c.nombre_interno,
+         c.layout,
+         c.imagen_url as circuito_imagen,
+         count(distinct s.id) as sesiones_totales,
+         count(v.id) as vueltas_totales,
+         min(v.tiempo_ms) filter (where v.valida) as mejor_tiempo_ms
+       from sesion s
+       join circuito c on c.id = s.circuito_id
+       left join vuelta v on v.sesion_id = s.id
+       where s.piloto_id = $1
+       group by c.id, c.nombre_visible, c.nombre_interno, c.layout, c.imagen_url
+       order by c.nombre_visible nulls last, c.nombre_interno`,
+      [req.piloto.id]
+    );
+
+    // Para cada circuito, buscamos con que auto y cuando se logro el
+    // record (la query de arriba no puede traer eso sin duplicar filas).
+    const conRecord = await Promise.all(
+      circuitos.rows.map(async (c) => {
+        if (!c.mejor_tiempo_ms) {
+          return { ...c, record_auto: null, record_fecha: null };
+        }
+        const record = await pool.query(
+          `select a.nombre_visible as record_auto, v.fecha as record_fecha
+           from vuelta v
+           join sesion s on s.id = v.sesion_id
+           join auto a on a.id = s.auto_id
+           where s.piloto_id = $1 and s.circuito_id = $2
+             and v.tiempo_ms = $3 and v.valida
+           order by v.fecha asc
+           limit 1`,
+          [req.piloto.id, c.circuito_id, c.mejor_tiempo_ms]
+        );
+        return { ...c, ...(record.rows[0] || { record_auto: null, record_fecha: null }) };
+      })
+    );
+
+    res.json({ circuitos: conRecord });
+  } catch (err) {
+    console.error('Error obteniendo circuitos del piloto:', err);
+    res.status(500).json({ error: 'Error interno obteniendo circuitos' });
+  }
+});
+
+/**
+ * GET /api/pilotos/me/circuitos/:circuito_id
+ * Detalle de un circuito para el piloto autenticado: record historico
+ * destacado + lista de sesiones (fecha real, auto, vueltas, mejor
+ * vuelta de esa sesion).
+ */
+router.get('/me/circuitos/:circuito_id', autenticarPiloto, async (req, res) => {
+  const { circuito_id } = req.params;
+
+  try {
+    const circuito = await pool.query(
+      `select id as circuito_id, nombre_visible as circuito_nombre, nombre_interno,
+              layout, imagen_url as circuito_imagen
+       from circuito where id = $1`,
+      [circuito_id]
+    );
+    if (circuito.rows.length === 0) {
+      return res.status(404).json({ error: 'Circuito no encontrado' });
+    }
+
+    const sesiones = await pool.query(
+      `select
+         s.id as sesion_id,
+         s.fecha_inicio,
+         s.fecha_fin,
+         a.id as auto_id,
+         a.nombre_visible as auto_nombre,
+         a.imagen_url as auto_imagen,
+         count(v.id) as vueltas_totales,
+         min(v.tiempo_ms) filter (where v.valida) as mejor_tiempo_ms
+       from sesion s
+       join auto a on a.id = s.auto_id
+       left join vuelta v on v.sesion_id = s.id
+       where s.piloto_id = $1 and s.circuito_id = $2
+       group by s.id, s.fecha_inicio, s.fecha_fin, a.id, a.nombre_visible, a.imagen_url
+       order by s.fecha_inicio desc`,
+      [req.piloto.id, circuito_id]
+    );
+
+    const record = await pool.query(
+      `select a.nombre_visible as record_auto, a.imagen_url as record_auto_imagen,
+              v.tiempo_ms as record_tiempo_ms, v.fecha as record_fecha
+       from vuelta v
+       join sesion s on s.id = v.sesion_id
+       join auto a on a.id = s.auto_id
+       where s.piloto_id = $1 and s.circuito_id = $2 and v.valida
+       order by v.tiempo_ms asc
+       limit 1`,
+      [req.piloto.id, circuito_id]
+    );
+
+    res.json({
+      circuito: circuito.rows[0],
+      record: record.rows[0] || null,
+      sesiones: sesiones.rows,
+    });
+  } catch (err) {
+    console.error('Error obteniendo detalle de circuito:', err);
+    res.status(500).json({ error: 'Error interno obteniendo detalle de circuito' });
+  }
+});
+
+/**
  * GET /api/pilotos/:id/perfil
  * Perfil público de un piloto (para que el frontend muestre el dashboard de cualquier piloto).
  */
