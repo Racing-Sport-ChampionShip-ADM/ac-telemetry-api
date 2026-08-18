@@ -75,7 +75,7 @@ router.get('/me', autenticarPiloto, async (req, res) => {
 
     const records = await pool.query(
       `select rv.auto_id, a.nombre_visible as auto_nombre,
-              rv.circuito_id, c.nombre_visible as circuito_nombre, c.layout,
+              rv.circuito_id, c.nombre_visible as circuito_nombre, c.layout, c.imagen_url as circuito_imagen,
               rv.tiempo_ms, rv.fecha
        from record_vuelta rv
        join auto a on a.id = rv.auto_id
@@ -124,7 +124,7 @@ router.get('/:id/perfil', async (req, res) => {
 
     const records = await pool.query(
       `select rv.auto_id, a.nombre_visible as auto_nombre,
-              rv.circuito_id, c.nombre_visible as circuito_nombre,
+              rv.circuito_id, c.nombre_visible as circuito_nombre, c.imagen_url as circuito_imagen,
               rv.tiempo_ms, rv.fecha
        from record_vuelta rv
        join auto a on a.id = rv.auto_id

@@ -7,12 +7,13 @@ const pilotosRouter = require('./routes/pilotos');
 const sesionesRouter = require('./routes/sesiones');
 const vueltasRouter = require('./routes/vueltas');
 const setupsRouter = require('./routes/setups');
+const circuitosRouter = require('./routes/circuitos');
 const raceControlRouter = require('./routes/raceControl');
 
 const app = express();
 
 app.use(cors()); // en producción, restringir a tu dominio del frontend (ver README)
-app.use(express.json({ limit: '2mb' })); // setups pueden ser JSON grandes
+app.use(express.json({ limit: '5mb' })); // las imágenes de circuito en base64 pueden pesar bastante
 
 app.get('/', (req, res) => {
   res.json({ status: 'ok', service: 'ac-telemetry-api' });
@@ -27,6 +28,7 @@ app.use('/api/pilotos', pilotosRouter);
 app.use('/api/sesiones', sesionesRouter);
 app.use('/api/vueltas', vueltasRouter);
 app.use('/api/setups', setupsRouter);
+app.use('/api/circuitos', circuitosRouter);
 app.use('/api/race-control', raceControlRouter);
 
 // 404 genérico
