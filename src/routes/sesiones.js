@@ -74,4 +74,44 @@ router.put('/:id/cerrar', autenticarPiloto, async (req, res) => {
   }
 });
 
+/**
+ * PUT /api/sesiones/:id/distancia
+ * La app in-game (via Companion) manda periodicamente (heartbeat) o al
+ * cerrar la sesion el total acumulado de metros recorridos en ESA sesion
+ * segun distanceTraveled de la memoria compartida de AC.
+ *
+ * Guarda el valor tal cual (no suma): cada llamada manda el acumulado
+ * completo de la sesion, asi que reintentos o llamadas fuera de orden no
+ * duplican distancia. Un trigger en `sesion` recalcula piloto_auto.km_totales
+ * a partir de esta columna.
+ *
+ * Body: { metros }
+ */
+router.put('/:id/distancia', autenticarPiloto, async (req, res) => {
+  const { id } = req.params;
+  const { metros } = req.body;
+
+  if (typeof metros !== 'number' || metros < 0) {
+    return res.status(400).json({ error: 'metros debe ser un numero mayor o igual a 0' });
+  }
+
+  try {
+    const result = await pool.query(
+      `update sesion set km_recorridos = $1 / 1000.0
+       where id = $2 and piloto_id = $3
+       returning id, km_recorridos`,
+      [metros, id, req.piloto.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Sesión no encontrada o no pertenece a este piloto' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('Error actualizando distancia de sesión:', err);
+    res.status(500).json({ error: 'Error interno actualizando distancia' });
+  }
+});
+
 module.exports = router;
