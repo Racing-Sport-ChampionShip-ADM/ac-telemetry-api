@@ -233,7 +233,7 @@ router.get('/:id/perfil', async (req, res) => {
     }
 
     const autos = await pool.query(
-      `select a.id as auto_id, a.nombre_visible, a.marca, a.categoria, a.imagen_url as auto_imagen,
+      `select a.id as auto_id, a.nombre_interno, a.nombre_visible, a.marca, a.categoria, a.imagen_url as auto_imagen,
               pa.km_totales, pa.vueltas_totales
        from piloto_auto pa
        join auto a on a.id = pa.auto_id

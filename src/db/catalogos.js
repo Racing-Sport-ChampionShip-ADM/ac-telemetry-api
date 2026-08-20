@@ -7,8 +7,27 @@ const pool = require('./pool');
 async function obtenerOCrearAuto({ nombre_interno, nombre_visible, marca, categoria }) {
   if (!nombre_interno) throw new Error('nombre_interno de auto es requerido');
 
-  const existente = await pool.query('select id from auto where nombre_interno = $1', [nombre_interno]);
-  if (existente.rows.length > 0) return existente.rows[0].id;
+  const existente = await pool.query(
+    'select id, nombre_visible, marca from auto where nombre_interno = $1',
+    [nombre_interno]
+  );
+  if (existente.rows.length > 0) {
+    const autoId = existente.rows[0].id;
+    // Autocorrige autos viejos: si el nombre_visible guardado es el
+    // placeholder (igual al nombre_interno) o esta vacio, y ahora nos
+    // llega un nombre_visible real (leido de ui_car.json), lo
+    // actualizamos. Mismo patron que la autocorreccion de
+    // longitud_metros en obtenerOCrearCircuito.
+    const nombreVisibleDesactualizado =
+      !existente.rows[0].nombre_visible || existente.rows[0].nombre_visible === nombre_interno;
+    if (nombreVisibleDesactualizado && nombre_visible && nombre_visible !== nombre_interno) {
+      await pool.query('update auto set nombre_visible = $1 where id = $2', [nombre_visible, autoId]);
+    }
+    if (!existente.rows[0].marca && marca) {
+      await pool.query('update auto set marca = $1 where id = $2', [marca, autoId]);
+    }
+    return autoId;
+  }
 
   const creado = await pool.query(
     `insert into auto (nombre_interno, nombre_visible, marca, categoria)
