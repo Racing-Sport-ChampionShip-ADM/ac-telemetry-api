@@ -2,6 +2,7 @@ const express = require('express');
 const pool = require('../db/pool');
 const { autenticarPiloto } = require('../middleware/auth');
 const { obtenerOCrearAuto, obtenerOCrearCircuito } = require('../db/catalogos');
+const { descargarArchivoPrivado } = require('../storage/supabaseStorage');
 
 const router = express.Router();
 
@@ -74,6 +75,41 @@ router.get('/', autenticarPiloto, async (req, res) => {
   } catch (err) {
     console.error('Error listando setups:', err);
     res.status(500).json({ error: 'Error interno listando setups' });
+  }
+});
+
+async function obtenerVersionPropia(id, pilotoId) {
+  const result = await pool.query(
+    `select id, nombre_archivo, storage_path from session_setup_version
+     where id = $1 and piloto_id = $2`,
+    [id, pilotoId]
+  );
+  return result.rows[0] || null;
+}
+
+router.get('/:id/contenido', autenticarPiloto, async (req, res) => {
+  try {
+    const setup = await obtenerVersionPropia(req.params.id, req.piloto.id);
+    if (!setup) return res.status(404).json({ error: 'Setup no encontrado' });
+    const contenido = await descargarArchivoPrivado('session-setups', setup.storage_path);
+    res.type('text/plain; charset=utf-8').send(contenido.toString('utf8'));
+  } catch (err) {
+    console.error('Error obteniendo contenido de setup:', err);
+    res.status(500).json({ error: 'Error interno obteniendo el setup' });
+  }
+});
+
+router.get('/:id/descargar', autenticarPiloto, async (req, res) => {
+  try {
+    const setup = await obtenerVersionPropia(req.params.id, req.piloto.id);
+    if (!setup) return res.status(404).json({ error: 'Setup no encontrado' });
+    const contenido = await descargarArchivoPrivado('session-setups', setup.storage_path);
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${setup.nombre_archivo.replace(/"/g, '_')}"`);
+    res.send(contenido);
+  } catch (err) {
+    console.error('Error descargando setup:', err);
+    res.status(500).json({ error: 'Error interno descargando el setup' });
   }
 });
 

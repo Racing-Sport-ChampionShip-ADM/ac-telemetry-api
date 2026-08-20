@@ -1,7 +1,9 @@
 const express = require('express');
+const crypto = require('crypto');
 const pool = require('../db/pool');
 const { autenticarPiloto } = require('../middleware/auth');
 const { obtenerOCrearAuto, obtenerOCrearCircuito } = require('../db/catalogos');
+const { subirArchivoPrivado, descargarArchivoPrivado } = require('../storage/supabaseStorage');
 
 const router = express.Router();
 
@@ -44,6 +46,122 @@ router.post('/', autenticarPiloto, async (req, res) => {
   } catch (err) {
     console.error('Error creando sesión:', err);
     res.status(500).json({ error: 'Error interno creando sesión' });
+  }
+});
+
+const MAX_SETUP_BYTES = 1500000;
+const SETUPS_BUCKET = 'session-setups';
+
+function nombreSeguro(nombre) {
+  const base = String(nombre || 'setup.ini').replace(/[\\/:*?"<>|]/g, '_').replace(/^\.+/, '');
+  return base.toLowerCase().endsWith('.ini') ? base : `${base}.ini`;
+}
+
+async function obtenerSetupPropio(setupId, pilotoId) {
+  const result = await pool.query(
+    `select id, sesion_id, piloto_id, nombre_archivo, storage_path, tamano_bytes,
+            modificado_en_origen, detectado_en, version
+     from session_setup_version where id = $1 and piloto_id = $2`,
+    [setupId, pilotoId]
+  );
+  return result.rows[0] || null;
+}
+
+/**
+ * POST /api/sesiones/:id/setups
+ * Guarda una versión inmutable del .ini de la sesión. El cliente puede enviar
+ * el mismo contenido más de una vez: cada guardado real conserva su snapshot.
+ * Body: { nombre_archivo, contenido_base64, modificado_en_origen? }
+ */
+router.post('/:id/setups', autenticarPiloto, async (req, res) => {
+  const { id } = req.params;
+  const { nombre_archivo, contenido_base64, modificado_en_origen } = req.body;
+  if (!contenido_base64 || typeof contenido_base64 !== 'string') {
+    return res.status(400).json({ error: 'contenido_base64 es requerido' });
+  }
+
+  let contenido;
+  try {
+    contenido = Buffer.from(contenido_base64, 'base64');
+  } catch (_) {
+    return res.status(400).json({ error: 'contenido_base64 inválido' });
+  }
+  if (!contenido.length || contenido.length > MAX_SETUP_BYTES) {
+    return res.status(400).json({ error: `El setup debe pesar entre 1 y ${MAX_SETUP_BYTES} bytes` });
+  }
+
+  try {
+    const sesion = await pool.query('select id from sesion where id = $1 and piloto_id = $2', [id, req.piloto.id]);
+    if (!sesion.rows.length) return res.status(404).json({ error: 'Sesión no encontrada o no pertenece a este piloto' });
+
+    const siguiente = await pool.query(
+      'select coalesce(max(version), 0) + 1 as version from session_setup_version where sesion_id = $1',
+      [id]
+    );
+    const version = siguiente.rows[0].version;
+    const archivo = nombreSeguro(nombre_archivo);
+    const storagePath = `${req.piloto.id}/${id}/${String(version).padStart(4, '0')}-${crypto.randomUUID()}-${archivo}`;
+    await subirArchivoPrivado(SETUPS_BUCKET, storagePath, contenido, 'text/plain; charset=utf-8');
+
+    const result = await pool.query(
+      `insert into session_setup_version
+       (sesion_id, piloto_id, nombre_archivo, storage_path, tamano_bytes, modificado_en_origen, version)
+       values ($1, $2, $3, $4, $5, $6, $7)
+       returning id, nombre_archivo, tamano_bytes, modificado_en_origen, detectado_en, version`,
+      [id, req.piloto.id, archivo, storagePath, contenido.length, modificado_en_origen || null, version]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('Error guardando versión de setup:', err);
+    res.status(500).json({ error: 'Error interno guardando el setup' });
+  }
+});
+
+/** Devuelve sesión, sus vueltas y los snapshots de setup al dueño. */
+router.get('/:id', autenticarPiloto, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const sesion = await pool.query(
+      `select s.id as sesion_id, s.fecha_inicio, s.fecha_fin, s.km_recorridos,
+              a.nombre_visible as auto_nombre, a.imagen_url as auto_imagen,
+              c.nombre_visible as circuito_nombre, c.nombre_interno as circuito_interno,
+              c.layout, c.imagen_url as circuito_imagen,
+              count(v.id) as vueltas_totales,
+              min(v.tiempo_ms) filter (where v.valida) as mejor_tiempo_ms
+       from sesion s
+       join auto a on a.id = s.auto_id
+       join circuito c on c.id = s.circuito_id
+       left join vuelta v on v.sesion_id = s.id
+       where s.id = $1 and s.piloto_id = $2
+       group by s.id, s.fecha_inicio, s.fecha_fin, s.km_recorridos,
+                a.nombre_visible, a.imagen_url, c.nombre_visible, c.nombre_interno, c.layout, c.imagen_url`,
+      [id, req.piloto.id]
+    );
+    if (!sesion.rows.length) return res.status(404).json({ error: 'Sesión no encontrada o no pertenece a este piloto' });
+    const setups = await pool.query(
+      `select id, nombre_archivo, tamano_bytes, modificado_en_origen, detectado_en, version
+       from session_setup_version where sesion_id = $1 and piloto_id = $2 order by version desc`,
+      [id, req.piloto.id]
+    );
+    res.json({ sesion: sesion.rows[0], setups: setups.rows });
+  } catch (err) {
+    console.error('Error obteniendo detalle de sesión:', err);
+    res.status(500).json({ error: 'Error interno obteniendo la sesión' });
+  }
+});
+
+router.get('/:id/setups', autenticarPiloto, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await pool.query(
+      `select id, nombre_archivo, tamano_bytes, modificado_en_origen, detectado_en, version
+       from session_setup_version where sesion_id = $1 and piloto_id = $2 order by version desc`,
+      [id, req.piloto.id]
+    );
+    res.json({ setups: result.rows });
+  } catch (err) {
+    console.error('Error listando setups de sesión:', err);
+    res.status(500).json({ error: 'Error interno listando los setups' });
   }
 });
 

@@ -33,6 +33,21 @@ npm run dev
    - `RACE_CONTROL_TOKEN`: un token random tuyo (ej. generado con `openssl rand -hex 32`).
 6. Deploy. Render te da una URL tipo `https://ac-telemetry-api.onrender.com`.
 
+### Setups por sesión (requerido antes del deploy)
+
+Esta versión agrega snapshots privados de los `.ini` guardados durante una
+sesión. Antes de desplegar, ejecutá una vez
+`db/migrations/20260819_session_setup_versions.sql` en el **SQL Editor** de
+Supabase. El script crea el bucket privado `session-setups` y la tabla de
+versiones. También agregá estas variables de entorno en Render:
+
+- `SUPABASE_URL`: URL del proyecto Supabase.
+- `SUPABASE_SERVICE_KEY`: service role key del proyecto. Nunca exponerla en
+  el frontend ni en la Companion.
+
+Los setups no son públicos: el backend descarga el archivo desde Storage y
+valida que pertenezca al piloto autenticado antes de devolverlo.
+
 Nota: en el free tier, el servicio se "duerme" tras un rato sin tráfico y el primer request después tarda ~30-50s en responder. Ya charlamos esto y es aceptable para este proyecto.
 
 ## Autenticación
